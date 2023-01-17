@@ -1,5 +1,7 @@
 {
-    "TeamEmails": {
+
+    "ExampleEmailsRedirections": {
         "origin@gmail.com": "alias@yourdomain.com"
     }
+    
 }

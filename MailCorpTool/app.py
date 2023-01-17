@@ -1,4 +1,5 @@
 # Libs.
+import base64
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -19,6 +20,9 @@ import json
 
 class MailCorpTool():
     def __init__(self) -> None:
+        
+        self.AllowedEmails = json.load(open('./../registredAccounts.json')) # Diccionary!
+
 
         self.SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 
@@ -54,7 +58,7 @@ class MailCorpTool():
 
 
     def start(self, sleepTime = 5):
-        print(self.SCOPES)
+        print('MailCorpTool is running. Handler Emails.')
         while(True):
             if self.creds:
                 # Conecting to gmail.
@@ -69,8 +73,69 @@ class MailCorpTool():
                         mailContent = service.users().messages().get(userId = 'me', id = mail['id']).execute()
 
 
+                        print(mailContent['payload']['headers'])
+
                         # Email Info.
                         emailFrom = mailContent['payload']['headers'][6]['value'][1:-1]
+                        titleEmail = ''
+
+                        # Find Title
+                        for cname, name in enumerate(mailContent['payload']['headers']):
+                            auth = False
+
+                            if (name['name'] == 'Subject'):
+
+                                titleEmailRaw = name['value'].split('>') # To target determined with ">" in the title. 
+                                titleEmail = titleEmailRaw[0].strip()
+
+
+                                if len(titleEmailRaw) == 2:
+                                    redirectToEmail = titleEmailRaw[1].strip()
+                                    allowRedirectEmail = True
+
+                                else:
+                                    redirectToEmail = None
+                                    allowRedirectEmail = False # Redundancia.
+
+
+                                # Example of this:
+                                # Subject: important meeting! > MyEmployee@enterprise.com
+                                # Details: Come to, paaa.
+
+
+                                # This email will be redirected to MyEmployee@enterprise.com.
+                                # If there is nothing, the mail is not sent.
+
+
+                                break
+
+                            else:
+                                continue    
+
+
+                        emailTextContent = mailContent['payload']['parts']
+                        if emailTextContent[0]['mimeType'] == 'text/plain': # Validamos la codificación del texto.
+                            emailTextContent = emailTextContent[0]['body']['data'].replace('-', '+').replace('_', '/')
+                            emailTextContent = base64.b64decode(emailTextContent).decode()
+
+
+                        
+
+                        if emailFrom in list(self.AllowedEmails.keys()): # Las Keys representan los emails nativos que permitiremos.
+                            if allowRedirectEmail:
+                                auth = True
+
+                            else:
+                                auth = False
+
+
+                            
+                        else:
+                            auth = False
+
+                    
+
+                        print(f'\n\n--------------- MailCorpTool --------------------\nNew message detected from {emailFrom}, to {redirectToEmail}, with title "{titleEmail}" and the text:\n{emailTextContent}\nAuthorized: {allowRedirectEmail}')
 
 
                 else:
@@ -82,4 +147,4 @@ class MailCorpTool():
 
 
 client = MailCorpTool()
-client.start(20)
+client.start(5)
