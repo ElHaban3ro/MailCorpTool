@@ -5,7 +5,8 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # Import configs.
 from config import *
@@ -24,7 +25,7 @@ class MailCorpTool():
         self.AllowedEmails = json.load(open('./../registredAccounts.json')) # Diccionary!
 
 
-        self.SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+        self.SCOPES = ['https://mail.google.com/']
 
         if AUTH_TOKEN_FILE_BOOl:
             if os.path.exists(AUTH_TOKEN_FILE):
@@ -73,11 +74,31 @@ class MailCorpTool():
                         mailContent = service.users().messages().get(userId = 'me', id = mail['id']).execute()
 
 
-                        print(mailContent['payload']['headers'])
-
                         # Email Info.
-                        emailFrom = mailContent['payload']['headers'][6]['value'][1:-1]
+                        emailFrom = ''
+                        nameFrom = ''
+
+
+                        # Find Title
+                        for cname, name in enumerate(mailContent['payload']['headers']):
+                            
+                            if (name['name'] == 'From'):
+                                splitInfo = name['value'].split('<')
+
+
+                                emailFrom = splitInfo[1][:-1].strip()
+                                nameFrom = splitInfo[0].strip()
+                                break
+
+                            else:
+                                continue
+
+
+
                         titleEmail = ''
+                        redirectToEmail = ''
+                        allowRedirectEmail = False
+
 
                         # Find Title
                         for cname, name in enumerate(mailContent['payload']['headers']):
@@ -115,15 +136,23 @@ class MailCorpTool():
 
                         emailTextContent = mailContent['payload']['parts']
                         if emailTextContent[0]['mimeType'] == 'text/plain': # Validamos la codificación del texto.
+                            RawEmailTextContent = emailTextContent[0]['body']['data']
                             emailTextContent = emailTextContent[0]['body']['data'].replace('-', '+').replace('_', '/')
                             emailTextContent = base64.b64decode(emailTextContent).decode()
 
 
                         
+                        redirectFromEmail = ''
 
-                        if emailFrom in list(self.AllowedEmails.keys()): # Las Keys representan los emails nativos que permitiremos.
+                        if emailFrom in list(self.AllowedEmails['TeamEmails'].keys()): # Las Keys representan los emails nativos que permitiremos.
                             if allowRedirectEmail:
                                 auth = True
+
+                                authEmailIndex = list(self.AllowedEmails['TeamEmails'].keys()).index(emailFrom)
+                                redirectFromEmail = list(self.AllowedEmails['TeamEmails'].values())[authEmailIndex]
+
+                                
+
 
                             else:
                                 auth = False
@@ -133,10 +162,38 @@ class MailCorpTool():
                         else:
                             auth = False
 
-                    
 
-                        print(f'\n\n--------------- MailCorpTool --------------------\nNew message detected from {emailFrom}, to {redirectToEmail}, with title "{titleEmail}" and the text:\n{emailTextContent}\nAuthorized: {allowRedirectEmail}')
 
+
+
+                        if allowRedirectEmail:
+                            print(f'\n\n--------------- MailCorpTool --------------------\nNew message detected from {emailFrom} with name {nameFrom}, to {redirectToEmail}, with title "{titleEmail}" and the text:\n{emailTextContent}\nAuthorized: {allowRedirectEmail}. ')
+
+                            message = MIMEMultipart() # Message component. To send.
+
+                            #TODO: Intenar añadir el texto raw.
+                            bodyEmail = MIMEText(emailTextContent) # The body is compresed
+                            message.attach(bodyEmail) # Se añade este mensado comprimido
+                            message['to'] = redirectToEmail
+                            message['subject'] = titleEmail
+                            message['from'] = redirectFromEmail
+                            
+                            create_message = {'raw': base64.urlsafe_b64encode(message.as_bytes()).decode()} # Se crea el "constructor del mensaje."
+
+                            send_message = service.users().messages().send(userId = 'me', body = create_message).execute()
+
+                            delete_original_message = service.users().messages().delete(userId = 'me', id = mail['id']).execute()
+
+                            time.sleep(5) # Si va demasiado rapido, el mensaje aún no se envia.
+
+                            delete_resend_message = service.users().messages().delete(userId = 'me', id = send_message['id']).execute()
+
+
+                            print('The message was correctly sent to the addressee.\n\n--------------- MailCorpTool --------------------\n\n\n')
+                            continue
+
+                        else:
+                            continue
 
                 else:
                     print('Waiting for messages... ¿Nothing? :(')
